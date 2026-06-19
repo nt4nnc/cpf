@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>cpf+</title>
     <style>
         body {
@@ -17,11 +17,14 @@
             min-height: 100vh;
             padding: 20px 0;
             overflow-x: hidden;
+            /* Prevents double-tap zoom delay on mobile devices */
+            touch-action: manipulation;
         }
         #gameContainer {
             position: relative;
             box-shadow: 0 0 25px rgba(0,0,0,0.9);
             border: 2px solid #333;
+            max-width: 100%;
         }
         canvas {
             background-color: #0d1117;
@@ -82,9 +85,69 @@
         }
         #ioData { flex-grow: 1; min-width: 150px; font-size: 12px; }
         #profileNameInput { width: 160px; }
+
+        /* Sleek full screen rotation requirement alert shield for portrait mode mobile users */
+        #orientationShield {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #0d1117;
+            z-index: 9999;
+            color: white;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+            font-family: sans-serif;
+        }
+        #orientationShield h2 { color: #0099ff; margin-bottom: 10px; }
+
+        /* ==========================================
+           --- RESPONSIVE MOBILE OVERRIDES ---
+           ========================================== */
+        @media (max-width: 960px) or (orientation: portrait) {
+            body {
+                padding: 0;
+                justify-content: center;
+                background-color: #0d1117;
+            }
+            #gameContainer {
+                border: none;
+                width: 100vw;
+                height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            canvas {
+                width: 100vw !important;
+                height: auto !important;
+                max-height: 100vh;
+                aspect-ratio: 960 / 540;
+            }
+            /* Hide large desktop layout/editor panels entirely on mobile to focus strictly on pure gameplay */
+            .ui-panel, .saves-manager, .instructions {
+                display: none !important;
+            }
+            /* Trigger portrait blocker notice display rule settings */
+            @media (orientation: portrait) {
+                #orientationShield {
+                    display: flex;
+                }
+                #gameContainer {
+                    display: none;
+                }
+            }
+        }
     </style>
 </head>
 <body>
+
+<div id="orientationShield">
+    <h2>🔄 Landscape View Required</h2>
+    <p>Please rotate your device horizontally to play!</p>
+</div>
 
 <div id="gameContainer">
     <canvas id="gameCanvas" width="960" height="540"></canvas>
@@ -227,12 +290,12 @@ function saveActiveLayoutSlot() {
     renderProfileDashboard();
 }
 
+// Mobile landscape helper verification check
 function getProfileRoster() {
     let data = localStorage.getItem('gd_profile_roster_index');
     return data ? JSON.parse(data) : ["Default Level"];
 }
 
-// Injects base floor tiles on boot if no save exists
 function initEngineLoad() {
     let roster = getProfileRoster();
     if (!localStorage.getItem(`gd_profile_Default Level`)) {
@@ -248,6 +311,7 @@ function initEngineLoad() {
 
 function renderProfileDashboard() {
     const container = document.getElementById('localSavesContainer');
+    if (!container) return; // Guard clause if interface is hidden on mobile
     container.innerHTML = '';
     let roster = getProfileRoster();
 
@@ -296,14 +360,17 @@ function renderProfileDashboard() {
     });
 }
 
-document.getElementById('btnSaveProfile').addEventListener('click', () => {
-    const nameInput = document.getElementById('profileNameInput');
-    let title = nameInput.value.trim().replace(/[:|,]/g, "");
-    if (!title) return alert("Please specify a profile layout name label name first.");
-    activeProfileKey = title;
-    saveActiveLayoutSlot();
-    nameInput.value = '';
-});
+const saveProfileBtn = document.getElementById('btnSaveProfile');
+if (saveProfileBtn) {
+    saveProfileBtn.addEventListener('click', () => {
+        const nameInput = document.getElementById('profileNameInput');
+        let title = nameInput.value.trim().replace(/[:|,]/g, "");
+        if (!title) return alert("Please specify a profile layout name label name first.");
+        activeProfileKey = title;
+        saveActiveLayoutSlot();
+        nameInput.value = '';
+    });
+}
 
 function triggerDeath() {
     if (isKilling) return;
@@ -338,10 +405,9 @@ function getPlayerHitbox() {
     };
 }
 
-// Helper to look up tiles, seamlessly forcing the infinite bottom row to be solid blocks
 function getTileAt(x, y) {
     if (y === levelHeightTiles - 1) {
-        return { type: 1, rotation: 0 }; // Forces a permanent solid floor block at the layout floor coordinate line
+        return { type: 1, rotation: 0 }; 
     }
     if (x >= 0 && x < levelWidthTiles && y >= 0 && y < levelHeightTiles) {
         return grid[x][y];
@@ -380,7 +446,6 @@ function updatePhysics() {
     let hitbox = getPlayerHitbox();
     let pCells = getOccupiedCells(player); 
 
-    // Handle Ground / Landing Collisions
     for (let cell of pCells) {
         let tile = getTileAt(cell.x, cell.y);
         if (tile.type === 1 || tile.type === 3) { 
@@ -403,7 +468,6 @@ function updatePhysics() {
 
     hitbox = getPlayerHitbox();
 
-    // Handle Head-on Wall Collisions
     for (let cell of pCells) {
         let tile = getTileAt(cell.x, cell.y);
         if (tile.type === 1 || tile.type === 3) {
@@ -422,7 +486,6 @@ function updatePhysics() {
         }
     }
 
-    // Handle Spike Hazards
     for (let cell of pCells) {
         let tile = getTileAt(cell.x, cell.y);
         if (tile.type === 2) { 
@@ -440,7 +503,6 @@ function updatePhysics() {
         }
     }
 
-    // Handle Interactive Orbs
     let touchingOrbThisFrame = false;
     for (let cell of pCells) {
         let tile = getTileAt(cell.x, cell.y);
@@ -725,6 +787,20 @@ window.addEventListener('mouseup', handlePointerUp);
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
 // ==========================================
+// --- TOUCH LISTENERS FOR MOBILE ---
+// ==========================================
+canvas.addEventListener('touchstart', (e) => {
+    // Treat any touch tap on mobile exactly like a desktop jump action click
+    if (mode === 'play') {
+        keys['clickJump'] = true;
+    }
+}, { passive: true });
+
+canvas.addEventListener('touchend', (e) => {
+    keys['clickJump'] = false;
+}, { passive: true });
+
+// ==========================================
 // --- HUD HTML BINDINGS ---
 // ==========================================
 const btnPlay = document.getElementById('btnPlay');
@@ -736,49 +812,59 @@ const ioDataField = document.getElementById('ioData');
 const btnExport = document.getElementById('btnExport');
 const btnImport = document.getElementById('btnImport');
 
-btnPlay.addEventListener('click', () => {
-    mode = 'play';
-    btnPlay.classList.add('active');
-    btnEdit.classList.remove('active');
-    editorTools.style.display = 'none';
-    localStorage.setItem(`gd_profile_${activeProfileKey}`, getSerializedLevelString());
-    resetPlayer();
-});
-
-btnEdit.addEventListener('click', () => {
-    mode = 'edit';
-    btnEdit.classList.add('active');
-    btnPlay.classList.remove('active');
-    editorTools.style.display = 'flex';
-});
-
-selectTile.addEventListener('change', (e) => { currentTileType = parseInt(e.target.value); });
-btnClear.addEventListener('click', () => {
-    if(confirm("Wipe this layout grid clean?")) {
-        grid = Array(levelWidthTiles).fill(null).map(() => Array(levelHeightTiles).fill(null).map(() => ({ type: 0, rotation: 0 })));
+if (btnPlay) {
+    btnPlay.addEventListener('click', () => {
+        mode = 'play';
+        btnPlay.classList.add('active');
+        btnEdit.classList.remove('active');
+        editorTools.style.display = 'none';
         localStorage.setItem(`gd_profile_${activeProfileKey}`, getSerializedLevelString());
-    }
-});
-
-btnExport.addEventListener('click', () => {
-    const strData = getSerializedLevelString();
-    ioDataField.value = strData;
-    navigator.clipboard.writeText(strData);
-    alert("Level flat string data copied to dashboard!");
-});
-
-btnImport.addEventListener('click', () => {
-    const rawCode = ioDataField.value.trim();
-    if (!rawCode) return alert("Paste a layout text code string package first.");
-    try {
-        parseLevelStringToGrid(rawCode);
-        localStorage.setItem(`gd_profile_${activeProfileKey}`, rawCode);
-        alert("Layout string successfully injected into active slot profile!");
         resetPlayer();
-    } catch(err) { 
-        alert("Invalid string packaging layout payload structure."); 
-    }
-});
+    });
+}
+
+if (btnEdit) {
+    btnEdit.addEventListener('click', () => {
+        mode = 'edit';
+        btnEdit.classList.add('active');
+        btnPlay.classList.remove('active');
+        editorTools.style.display = 'flex';
+    });
+}
+
+if (selectTile) selectTile.addEventListener('change', (e) => { currentTileType = parseInt(e.target.value); });
+if (btnClear) {
+    btnClear.addEventListener('click', () => {
+        if(confirm("Wipe this layout grid clean?")) {
+            grid = Array(levelWidthTiles).fill(null).map(() => Array(levelHeightTiles).fill(null).map(() => ({ type: 0, rotation: 0 })));
+            localStorage.setItem(`gd_profile_${activeProfileKey}`, getSerializedLevelString());
+        }
+    });
+}
+
+if (btnExport) {
+    btnExport.addEventListener('click', () => {
+        const strData = getSerializedLevelString();
+        ioDataField.value = strData;
+        navigator.clipboard.writeText(strData);
+        alert("Level flat string data copied to dashboard!");
+    });
+}
+
+if (btnImport) {
+    btnImport.addEventListener('click', () => {
+        const rawCode = ioDataField.value.trim();
+        if (!rawCode) return alert("Paste a layout text code string package first.");
+        try {
+            parseLevelStringToGrid(rawCode);
+            localStorage.setItem(`gd_profile_${activeProfileKey}`, rawCode);
+            alert("Layout string successfully injected into active slot profile!");
+            resetPlayer();
+        } catch(err) { 
+            alert("Invalid string packaging layout payload structure."); 
+        }
+    });
+}
 
 initEngineLoad();
 resetPlayer();
