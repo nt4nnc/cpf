@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>cpf+</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #111;
+            color: #fff;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px 0;
+            overflow-x: hidden;
+        }
+        #gameContainer {
+            position: relative;
+            box-shadow: 0 0 25px rgba(0,0,0,0.9);
+            border: 2px solid #333;
+        }
+        canvas {
+            background-color: #0d1117;
+            display: block;
+        }
+        .ui-panel {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            background: #222;
+            padding: 12px;
+            border-radius: 6px;
+            align-items: center;
+            flex-wrap: wrap;
+            width: 960px;
+            box-sizing: border-box;
+        }
+        .saves-manager {
+            margin-top: 10px;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            padding: 12px;
+            border-radius: 6px;
+            width: 960px;
+            box-sizing: border-box;
+        }
+        .saves-list {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+            min-height: 35px;
+        }
+        button, select, input {
+            background: #3c3c3c;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 8px 14px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+            outline: none;
+        }
+        button:hover { background: #4a4a4a; }
+        button.active { background: #007acc; border-color: #0099ff; }
+        button.save-tab { background: #28a745; border-color: #2fb64e; }
+        button.save-tab:hover { background: #218838; }
+        button.save-tab.selected { background: #007acc; border-color: #0099ff; box-shadow: 0 0 8px #007acc; }
+        button.delete-btn { background: #dc3545; padding: 4px 8px; font-size: 11px; margin-left: 5px; border-radius: 3px; }
+        button.delete-btn:hover { background: #bd2130; }
+        .instructions {
+            margin-top: 15px;
+            color: #aaa;
+            font-size: 13px;
+            text-align: center;
+            line-height: 1.6;
+            max-width: 800px;
+        }
+        #ioData { flex-grow: 1; min-width: 150px; font-size: 12px; }
+        #profileNameInput { width: 160px; }
+    </style>
+</head>
+<body>
+
+<div id="gameContainer">
+    <canvas id="gameCanvas" width="960" height="540"></canvas>
+</div>
+
+<div class="ui-panel">
+    <button id="btnPlay" class="active">Play Mode</button>
+    <button id="btnEdit">Editor Mode</button>
+    <span id="editorTools" style="display: none; gap: 10px; align-items: center;">
+        <select id="selectTile">
+            <option value="1">Block (Solid)</option>
+            <option value="2">Spike (Hazard)</option>
+            <option value="3">Slab (Half-Solid)</option>
+            <option value="4">Yellow Orb (Jump Boost)</option>
+        </select>
+        <button id="btnClear">Clear Layout</button>
+    </span>
+    <input type="text" id="ioData" placeholder="Level string data field...">
+    <button id="btnExport">Export String</button>
+    <button id="btnImport">Import String</button>
+</div>
+
+<div class="saves-manager">
+    <div style="display: flex; gap: 10px; align-items: center;">
+        <strong style="font-size: 14px; color: #0099ff;">Browser Level Inventory:</strong>
+        <input type="text" id="profileNameInput" placeholder="Name your level...">
+        <button id="btnSaveProfile">💾 Save Current Layout</button>
+    </div>
+    <div class="saves-list" id="localSavesContainer">
+        </div>
+</div>
+
+<div class="instructions">
+    <strong>Controls Map:</strong><br>
+    <strong>Play Mode:</strong> SPACEBAR, UP ARROW, or Click to Jump. Tap action keys inside Yellow Orbs to launch midair. 'R' to reload.<br>
+    <strong>Editor Mode:</strong> Left Click = Draw, Right Click = Erase. Use Left/Right Arrows to scroll map. <br>
+    <span style="color: #00ff66;"><strong>New Pan View:</strong> Hold down <strong>SPACEBAR + Drag Mouse</strong> across canvas to rapidly slide camera view left/right.</span><br>
+    <strong>Object Toggles:</strong> Press <strong>'E'</strong> on keyboard to rotate the active object brush cleanly by 90° increments before drawing.
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// ==========================================
+// --- FIXED PHYSICS PRESETS ---
+// ==========================================
+const TILE_SIZE = 30; 
+const FORWARD_SPEED = 6.0 / 2.3; 
+const VIEW_OFFSET_X = 180; 
+
+const JUMP_SPEED = 0.06; 
+const JUMP_RADIUS = TILE_SIZE * 2.1; 
+
+const HITBOX_BUFFER = 4; 
+
+// ==========================================
+// --- SYSTEM STATE VARIABLES ---
+// ==========================================
+let mode = 'play'; 
+let levelWidthTiles = 300;
+let levelHeightTiles = Math.floor(canvas.height / TILE_SIZE); 
+
+let grid = Array(levelWidthTiles).fill(null).map(() => 
+    Array(levelHeightTiles).fill(null).map(() => ({ type: 0, rotation: 0 }))
+);
+
+let cameraX = 0;
+let currentTileType = 1;
+let currentEditorRotation = 0; 
+let activeProfileKey = "Default Level"; // Tracker for active selected map profile slot
+
+let player = {
+    x: 100,
+    y: 300,
+    w: 30, 
+    h: 30, 
+    vx: FORWARD_SPEED,
+    vy: 0,
+    isJumping: false,
+    jumpAngle: 0,       
+    jumpGroundY: 0,     
+    isGrounded: false,
+    rotation: 0,
+    alive: true,
+    hasActivatedOrb: false
+};
+
+let keys = {};
+let isPlacing = false;
+let isErasing = false;
+
+// Camera drag interaction states
+let isDraggingCamera = false;
+let lastMouseX = 0;
+
+// Default backup level code string [cite: 1]
+const fallbackString = "0:17:1:0,1:17:1:0,2:17:1:0,3:17:1:0,4:17:1:0,5:17:1:0,6:17:1:0,7:17:1:0,8:17:1:0,9:17:1:0,10:17:1:0,11:17:1:0,12:17:1:0,13:13:1:0,13:15:1:0,13:16:1:0,13:17:1:0,14:17:1:0,15:17:1:0,16:17:1:0,17:17:1:0,18:17:1:0,19:17:1:0,20:16:2:0,20:17:1:0,21:16:2:0,21:17:1:0,22:16:2:0,22:17:1:0,23:17:1:0,24:17:1:0,25:17:1:0,26:16:2:0,26:17:1:0,27:16:2:0,27:17:1:0,28:17:1:0,29:17:1:0,30:17:1:0,31:16:3:0,31:17:1:0,32:16:3:0,32:17:1:0,33:16:3:0,33:17:1:0,34:16:3:0,34:17:1:0,35:16:1:0,35:17:1:0,36:16:1:0,36:17:1:0,37:16:1:0,37:17:1:0,38:17:1:0,23:13:4:0,27:13:4:0,38:13:4:0,45:13:4:0";
+
+// ==========================================
+// --- MULTI-PROFILE BROWSER SAVE CORE ---
+// ==========================================
+function getSerializedLevelString() {
+    let savedData = [];
+    for (let x = 0; x < levelWidthTiles; x++) {
+        for (let y = 0; y < levelHeightTiles; y++) {
+            if (grid[x][y].type !== 0) {
+                savedData.push(`${x}:${y}:${grid[x][y].type}:${grid[x][y].rotation}`);
+            }
+        }
+    }
+    return savedData.join(',');
+}
+
+function parseLevelStringToGrid(levelString) {
+    grid = Array(levelWidthTiles).fill(null).map(() => 
+        Array(levelHeightTiles).fill(null).map(() => ({ type: 0, rotation: 0 }))
+    );
+    if (!levelString) return;
+    const tiles = levelString.split(',');
+    tiles.forEach(tileStr => {
+        if (!tileStr) return;
+        const parts = tileStr.split(':');
+        const x = parseInt(parts[0], 10);
+        const y = parseInt(parts[1], 10);
+        const t = parseInt(parts[2], 10);
+        const r = parts[3] ? parseInt(parts[3], 10) : 0;
+        if (x < levelWidthTiles && y < levelHeightTiles) {
+            grid[x][y] = { type: t, rotation: r };
+        }
+    });
+}
+
+function saveActiveLayoutSlot() {
+    localStorage.setItem(`gd_profile_${activeProfileKey}`, getSerializedLevelString());
+    // Store profile key in master roster list index if missing
+    let listing = getProfileRoster();
+    if (!listing.includes(activeProfileKey)) {
+        listing.push(activeProfileKey);
+        localStorage.setItem('gd_profile_roster_index', JSON.stringify(listing));
+    }
+    renderProfileDashboard();
+}
+
+function getProfileRoster() {
+    let data = localStorage.getItem('gd_profile_roster_index');
+    return data ? JSON.parse(data) : ["Default Level"];
+}
+
+function initEngineLoad() {
+    let roster = getProfileRoster();
+    // If local system index is blank, set defaults up
+    if (!localStorage.getItem(`gd_profile_Default Level`)) {
+        localStorage.setItem(`gd_profile_Default Level`, fallbackString);
+    }
+    
+    let cachedData = localStorage.getItem(`gd_profile_${activeProfileKey}`);
+    if (!cachedData) cachedData = fallbackString;
+    
+    parseLevelStringToGrid(cachedData);
+    renderProfileDashboard();
+}
+
+function renderProfileDashboard() {
+    const container = document.getElementById('localSavesContainer');
+    container.innerHTML = '';
+    let roster = getProfileRoster();
+
+    roster.forEach(profileName => {
+        const wrapper = document.createElement('div');
+        wrapper.style.display = "inline-flex";
+        wrapper.style.alignItems = "center";
+        wrapper.style.background = "#2a2a2a";
+        wrapper.style.borderRadius = "4px";
+        wrapper.style.paddingRight = "4px";
+
+        const btn = document.createElement('button');
+        btn.className = "save-tab";
+        btn.innerText = profileName;
+        if (profileName === activeProfileKey) btn.classList.add('selected');
+
+        btn.addEventListener('click', () => {
+            // Commit active map modifications before switching profiles
+            localStorage.setItem(`gd_profile_${activeProfileKey}`, getSerializedLevelString());
+            activeProfileKey = profileName;
+            parseLevelStringToGrid(localStorage.getItem(`gd_profile_${profileName}`));
+            renderProfileDashboard();
+            resetPlayer();
+        });
+
+        wrapper.appendChild(btn);
+
+        // Render profile removal controls if it isn't the primary fallback track
+        if (profileName !== "Default Level") {
+            const delBtn = document.createElement('button');
+            delBtn.className = "delete-btn";
+            delBtn.innerText = "✕";
+            delBtn.title = "Delete Level";
+            delBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (confirm(`Permanently remove level layout "${profileName}"?`)) {
+                    localStorage.removeItem(`gd_profile_${profileName}`);
+                    let activeRoster = getProfileRoster().filter(item => item !== profileName);
+                    localStorage.setItem('gd_profile_roster_index', JSON.stringify(activeRoster));
+                    if (activeProfileKey === profileName) activeProfileKey = "Default Level";
+                    initEngineLoad();
+                }
+            });
+            wrapper.appendChild(delBtn);
+        }
+
+        container.appendChild(wrapper);
+    });
+}
+
+// Profile Save Input Listener Link
+document.getElementById('btnSaveProfile').addEventListener('click', () => {
+    const nameInput = document.getElementById('profileNameInput');
+    let title = nameInput.value.trim().replace(/[:|,]/g, ""); // Filter illegal syntax split tokens
+    if (!title) return alert("Please specify a profile layout label name first.");
+    activeProfileKey = title;
+    saveActiveLayoutSlot();
+    nameInput.value = '';
+});
+
+function resetPlayer() {
+    player.x = 100;
+    player.y = (levelHeightTiles - 2) * TILE_SIZE;
+    player.vx = FORWARD_SPEED;
+    player.vy = 0;
+    player.isJumping = false;
+    player.isGrounded = false;
+    player.rotation = 0;
+    player.alive = true;
+    player.hasActivatedOrb = false;
+    cameraX = 0;
+}
+
+function getPlayerHitbox() {
+    return {
+        x: player.x + HITBOX_BUFFER,
+        y: player.y + HITBOX_BUFFER,
+        w: player.w - (HITBOX_BUFFER * 2),
+        h: player.h - (HITBOX_BUFFER * 2)
+    };
+}
+
+// ==========================================
+// --- PHYSICAL SUB-SYSTEM CYCLE ---
+// ==========================================
+function updatePhysics() {
+    if (!player.alive) return;
+
+    let previousY = player.y;
+    player.x += player.vx;
+
+    if (player.isJumping) {
+        player.jumpAngle += JUMP_SPEED;
+        if (player.jumpAngle >= Math.PI) {
+            player.y = player.jumpGroundY;
+            player.isJumping = false;
+            player.vy = 0;
+        } else {
+            let heightOffset = Math.sin(player.jumpAngle) * JUMP_RADIUS;
+            player.y = player.jumpGroundY - heightOffset;
+            player.vy = player.y - previousY; 
+        }
+    } else {
+        if (!player.isGrounded) {
+            player.vy = 5.0; 
+            player.y += player.vy;
+        }
+    }
+
+    player.isGrounded = false;
+    let hitbox = getPlayerHitbox();
+    let pCells = getOccupiedCells(player); 
+
+    // Floor / Ledge Solid Collisions
+    for (let cell of pCells) {
+        if (cell.x >= 0 && cell.x < levelWidthTiles && cell.y >= 0 && cell.y < levelHeightTiles) {
+            let tile = grid[cell.x][cell.y];
+            if (tile.type === 1 || tile.type === 3) { 
+                let tileTop = cell.y * TILE_SIZE;
+                let tileLeft = cell.x * TILE_SIZE;
+                let tileRight = tileLeft + TILE_SIZE;
+
+                if (hitbox.x + hitbox.w > tileLeft && hitbox.x < tileRight) {
+                    if (player.y + player.h >= tileTop && previousY + player.h <= tileTop + 8) {
+                        player.y = tileTop - player.h;
+                        player.isGrounded = true;
+                        if (player.isJumping) {
+                            player.isJumping = false;
+                            player.vy = 0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    hitbox = getPlayerHitbox();
+
+    // Wall Frontal Crash Management
+    for (let cell of pCells) {
+        if (cell.x >= 0 && cell.x < levelWidthTiles && cell.y >= 0 && cell.y < levelHeightTiles) {
+            let tile = grid[cell.x][cell.y];
+            if (tile.type === 1 || tile.type === 3) {
+                let tileLeft = cell.x * TILE_SIZE;
+                let tileRight = tileLeft + TILE_SIZE;
+                let tileTop = cell.y * TILE_SIZE;
+                let tileBottom = tileTop + (tile.type === 3 ? TILE_SIZE/2 : TILE_SIZE);
+
+                if (hitbox.x + hitbox.w > tileLeft && hitbox.x < tileRight) {
+                    if (hitbox.y + hitbox.h > tileTop + 2 && hitbox.y < tileBottom - 2) {
+                        if (!player.isGrounded || (player.y + player.h > tileTop + HITBOX_BUFFER)) {
+                            player.alive = false; 
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Rotated Spike Vector Collision Hitboxes
+    for (let cell of pCells) {
+        if (cell.x >= 0 && cell.x < levelWidthTiles && cell.y >= 0 && cell.y < levelHeightTiles) {
+            let tile = grid[cell.x][cell.y];
+            if (tile.type === 2) { 
+                let sLeft = cell.x * TILE_SIZE + 5;
+                let sRight = (cell.x + 1) * TILE_SIZE - 5;
+                let sTop = cell.y * TILE_SIZE + 5;
+                let sBottom = (cell.y + 1) * TILE_SIZE;
+
+                if (tile.rotation === 0) sTop = cell.y * TILE_SIZE + 10;
+                if (tile.rotation === 2) sBottom = cell.y * TILE_SIZE + 20;
+
+                if (hitbox.x + hitbox.w > sLeft && hitbox.x < sRight && hitbox.y + hitbox.h > sTop && hitbox.y < sBottom) {
+                    player.alive = false;
+                }
+            }
+        }
+    }
+
+    // Airborne Interactive Orb Triggers
+    let touchingOrbThisFrame = false;
+    for (let cell of pCells) {
+        if (cell.x >= 0 && cell.x < levelWidthTiles && cell.y >= 0 && cell.y < levelHeightTiles) {
+            let tile = grid[cell.x][cell.y];
+            if (tile.type === 4) {
+                let orbCenterX = cell.x * TILE_SIZE + TILE_SIZE / 2;
+                let orbCenterY = cell.y * TILE_SIZE + TILE_SIZE / 2;
+                let pCenterX = player.x + player.w / 2;
+                let pCenterY = player.y + player.h / 2;
+
+                let distance = Math.sqrt((pCenterX - orbCenterX)**2 + (pCenterY - orbCenterY)**2);
+                if (distance < 36) {
+                    touchingOrbThisFrame = true;
+                    if ((keys[' '] || keys['ArrowUp'] || keys['clickJump']) && !player.hasActivatedOrb) {
+                        player.isJumping = true;
+                        player.jumpAngle = 0; 
+                        player.jumpGroundY = player.y; 
+                        player.hasActivatedOrb = true;
+                    }
+                }
+            }
+        }
+    }
+    if (!touchingOrbThisFrame) player.hasActivatedOrb = false;
+
+    // Boundary Fall Toggles
+    if (!player.isJumping && !player.isGrounded) {
+        let floorCells = getOccupiedCells({x: player.x, y: player.y + 1, w: player.w, h: player.h});
+        let foundFloor = false;
+        for(let c of floorCells) {
+            if(grid[c.x] && (grid[c.x][c.y].type === 1 || grid[c.x][c.y].type === 3)) {
+                foundFloor = true;
+            }
+        }
+        if(foundFloor) player.isGrounded = true;
+    }
+
+    // Dynamic Visual Rotation Locks
+    if (player.isGrounded) {
+        let targetRot = Math.round(player.rotation / (Math.PI / 2)) * (Math.PI / 2);
+        player.rotation += (targetRot - player.rotation) * 0.3;
+    } else if (player.isJumping) {
+        let progressPercent = player.jumpAngle / Math.PI;
+        player.rotation = progressPercent * Math.PI; 
+    } else {
+        player.rotation += 0.03;
+    }
+
+    cameraX = player.x - VIEW_OFFSET_X;
+    if (cameraX < 0) cameraX = 0;
+}
+
+function getOccupiedCells(obj) {
+    let xStart = Math.floor(obj.x / TILE_SIZE);
+    let xEnd = Math.floor((obj.x + obj.w) / TILE_SIZE);
+    let yStart = Math.floor(obj.y / TILE_SIZE);
+    let yEnd = Math.floor((obj.y + obj.h) / TILE_SIZE);
+    let cells = [];
+    for (let x = xStart; x <= xEnd; x++) {
+        for (let y = yStart; y <= yEnd; y++) {
+            cells.push({x, y});
+        }
+    }
+    return cells;
+}
+
+// ==========================================
+// --- RENDER RE-PAINT SYSTEM ---
+// ==========================================
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = '#1b222d';
+    ctx.lineWidth = 1;
+    let startX = Math.floor(cameraX / TILE_SIZE) * TILE_SIZE;
+    for (let x = startX; x < cameraX + canvas.width; x += TILE_SIZE) {
+        ctx.beginPath();
+        ctx.moveTo(x - cameraX, 0);
+        ctx.lineTo(x - cameraX, canvas.height);
+        ctx.stroke();
+    }
+    for (let y = 0; y < canvas.height; y += TILE_SIZE) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+    }
+
+    let tileStartCol = Math.floor(cameraX / TILE_SIZE);
+    let tileEndCol = tileStartCol + Math.ceil(canvas.width / TILE_SIZE) + 1;
+
+    for (let x = tileStartCol; x < tileEndCol; x++) {
+        if (x < 0 || x >= levelWidthTiles) continue;
+        for (let y = 0; y < levelHeightTiles; y++) {
+            let tile = grid[x][y];
+            if (tile.type === 0) continue;
+
+            let rx = x * TILE_SIZE - cameraX;
+            let ry = y * TILE_SIZE;
+
+            ctx.save();
+            ctx.translate(rx + TILE_SIZE / 2, ry + TILE_SIZE / 2);
+            ctx.rotate(tile.rotation * (Math.PI / 2));
+
+            if (tile.type === 1) { 
+                ctx.fillStyle = '#00bcff';
+                ctx.fillRect(-TILE_SIZE / 2, -TILE_SIZE / 2, TILE_SIZE, TILE_SIZE);
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(-TILE_SIZE / 2, -TILE_SIZE / 2, TILE_SIZE, TILE_SIZE);
+            } else if (tile.type === 2) { 
+                ctx.fillStyle = '#ff3333';
+                ctx.beginPath();
+                ctx.moveTo(0, -TILE_SIZE / 2);
+                ctx.lineTo(-TILE_SIZE / 2, TILE_SIZE / 2);
+                ctx.lineTo(TILE_SIZE / 2, TILE_SIZE / 2);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            } else if (tile.type === 3) { 
+                ctx.fillStyle = '#00bcff';
+                ctx.fillRect(-TILE_SIZE / 2, -TILE_SIZE / 2, TILE_SIZE, TILE_SIZE / 2);
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(-TILE_SIZE / 2, -TILE_SIZE / 2, TILE_SIZE, TILE_SIZE / 2);
+            } else if (tile.type === 4) {
+                ctx.beginPath();
+                ctx.arc(0, 0, TILE_SIZE / 2.5, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffe600';
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#ffffff';
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.arc(0, 0, TILE_SIZE / 4, 0, Math.PI * 2);
+                ctx.strokeStyle = '#ff9900';
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+    }
+
+    if (mode === 'play') {
+        ctx.save();
+        ctx.translate(player.x - cameraX + player.w / 2, player.y + player.h / 2);
+        ctx.rotate(player.rotation);
+        
+        ctx.fillStyle = player.alive ? '#00ff66' : '#555555';
+        ctx.fillRect(-player.w / 2, -player.h / 2, player.w, player.h);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(-player.w / 2, -player.h / 2, player.w, player.h);
+
+        ctx.fillStyle = '#000';
+        ctx.fillRect(-8, -10, 6, 6);
+        ctx.fillRect(2, -10, 6, 6);
+        ctx.fillRect(-8, 2, 16, 4);
+        ctx.restore();
+    }
+    
+    if (mode === 'edit') {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.font = '14px monospace';
+        ctx.fillText(`TRACK SLOT: [ ${activeProfileKey} ] | Brush Rotation: ${currentEditorRotation * 90}° (Press 'E')`, 15, 25);
+        if (keys[' ']) {
+            ctx.fillStyle = 'rgba(0, 153, 255, 0.6)';
+            ctx.fillText(`✢ [CAMERA DRAG ENGAGED] Hold Space & Slide Mouse`, 15, 48);
+        }
+    }
+}
+
+function loop() {
+    if (mode === 'play') {
+        if ((keys[' '] || keys['ArrowUp'] || keys['clickJump']) && player.isGrounded && !player.isJumping) {
+            player.isJumping = true;
+            player.isGrounded = false;
+            player.jumpAngle = 0; 
+            player.jumpGroundY = player.y;
+        }
+        updatePhysics();
+        if (!player.alive) {
+            setTimeout(() => { resetPlayer(); }, 500);
+        }
+    } else {
+        // Fallback Arrow Key Scroll Velocities
+        if (!isDraggingCamera) {
+            if (keys['ArrowRight']) cameraX += 10;
+            if (keys['ArrowLeft']) cameraX -= 10;
+        }
+        if (cameraX < 0) cameraX = 0;
+    }
+
+    draw();
+    requestAnimationFrame(loop);
+}
+
+// ==========================================
+// --- CENTRAL KEYBOARD LISTENER LOCKS ---
+// ==========================================
+window.addEventListener('keydown', (e) => {
+    keys[e.key] = true;
+    if (e.key === 'r' || e.key === 'R') resetPlayer();
+    if ((e.key === 'e' || e.key === 'E') && mode === 'edit') {
+        currentEditorRotation = (currentEditorRotation + 1) % 4; 
+    }
+    if(e.key === ' ' || e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault();
+});
+window.addEventListener('keyup', (e) => { keys[e.key] = false; });
+
+// ==========================================
+// --- MOUSE CLICK & MOVE EVENT HANDLERS ---
+// ==========================================
+function handlePointerDown(e) {
+    const rect = canvas.getBoundingClientRect();
+    const currentMX = e.clientX - rect.left;
+    lastMouseX = currentMX;
+
+    if (mode === 'play') {
+        keys['clickJump'] = true;
+    } else {
+        // Spacebar camera drag initialization switch
+        if (keys[' ']) {
+            isDraggingCamera = true;
+            return;
+        }
+
+        const mx = currentMX + cameraX;
+        const my = e.clientY - rect.top;
+        const tx = Math.floor(mx / TILE_SIZE);
+        const ty = Math.floor(my / TILE_SIZE);
+
+        if (e.button === 0) { 
+            isPlacing = true;
+            if (tx >= 0 && tx < levelWidthTiles && ty >= 0 && ty < levelHeightTiles) {
+                grid[tx][ty] = { type: currentTileType, rotation: currentEditorRotation };
+            }
+        } else if (e.button === 2) { 
+            isErasing = true;
+            if (tx >= 0 && tx < levelWidthTiles && ty >= 0 && ty < levelHeightTiles) {
+                grid[tx][ty] = { type: 0, rotation: 0 };
+            }
+        }
+    }
+}
+
+function handlePointerMove(e) {
+    const rect = canvas.getBoundingClientRect();
+    const currentMX = e.clientX - rect.left;
+
+    if (mode === 'edit') {
+        // Drag scrolling logic execution block
+        if (isDraggingCamera && keys[' ']) {
+            let deltaX = currentMX - lastMouseX;
+            cameraX -= deltaX; 
+            if (cameraX < 0) cameraX = 0;
+            lastMouseX = currentMX;
+            return;
+        }
+
+        const mx = currentMX + cameraX;
+        const my = e.clientY - rect.top;
+        const tx = Math.floor(mx / TILE_SIZE);
+        const ty = Math.floor(my / TILE_SIZE);
+
+        if (tx >= 0 && tx < levelWidthTiles && ty >= 0 && ty < levelHeightTiles) {
+            if (isPlacing) grid[tx][ty] = { type: currentTileType, rotation: currentEditorRotation };
+            if (isErasing) grid[tx][ty] = { type: 0, rotation: 0 };
+        }
+    }
+}
+
+function handlePointerUp(e) {
+    keys['clickJump'] = false;
+    isDraggingCamera = false;
+    if((isPlacing || isErasing) && mode === 'edit') {
+        localStorage.setItem(`gd_profile_${activeProfileKey}`, getSerializedLevelString());
+    }
+    isPlacing = false;
+    isErasing = false;
+}
+
+canvas.addEventListener('mousedown', handlePointerDown);
+canvas.addEventListener('mousemove', handlePointerMove);
+window.addEventListener('mouseup', handlePointerUp);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// ==========================================
+// --- HUD HTML BINDINGS ---
+// ==========================================
+const btnPlay = document.getElementById('btnPlay');
+const btnEdit = document.getElementById('btnEdit');
+const editorTools = document.getElementById('editorTools');
+const selectTile = document.getElementById('selectTile');
+const btnClear = document.getElementById('btnClear');
+const ioDataField = document.getElementById('ioData');
+const btnExport = document.getElementById('btnExport');
+const btnImport = document.getElementById('btnImport');
+
+btnPlay.addEventListener('click', () => {
+    mode = 'play';
+    btnPlay.classList.add('active');
+    btnEdit.classList.remove('active');
+    editorTools.style.display = 'none';
+    localStorage.setItem(`gd_profile_${activeProfileKey}`, getSerializedLevelString());
+    resetPlayer();
+});
+
+btnEdit.addEventListener('click', () => {
+    mode = 'edit';
+    btnEdit.classList.add('active');
+    btnPlay.classList.remove('active');
+    editorTools.style.display = 'flex';
+});
+
+selectTile.addEventListener('change', (e) => { currentTileType = parseInt(e.target.value); });
+btnClear.addEventListener('click', () => {
+    if(confirm("Wipe this layout grid clean?")) {
+        grid = Array(levelWidthTiles).fill(null).map(() => Array(levelHeightTiles).fill(null).map(() => ({ type: 0, rotation: 0 })));
+        localStorage.setItem(`gd_profile_${activeProfileKey}`, getSerializedLevelString());
+    }
+});
+
+btnExport.addEventListener('click', () => {
+    const strData = getSerializedLevelString();
+    ioDataField.value = strData;
+    navigator.clipboard.writeText(strData);
+    alert("Level flat string data copied to dashboard!");
+});
+
+btnImport.addEventListener('click', () => {
+    const rawCode = ioDataField.value.trim();
+    if (!rawCode) return alert("Paste a layout text code string package first.");
+    try {
+        parseLevelStringToGrid(rawCode);
+        localStorage.setItem(`gd_profile_${activeProfileKey}`, rawCode);
+        alert("Layout string successfully injected into active slot profile!");
+        resetPlayer();
+    } catch(err) { 
+        alert("Invalid string packaging layout payload structure."); 
+    }
+});
+
+// Run Primary Assembly Loops
+initEngineLoad();
+resetPlayer();
+loop();
+</script>
+
+</body>
+</html>
