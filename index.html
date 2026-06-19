@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>cpf+</title>
     <style>
         body {
@@ -22,10 +22,13 @@
             position: relative;
             box-shadow: 0 0 25px rgba(0,0,0,0.9);
             border: 2px solid #333;
+            max-width: 100%;
         }
         canvas {
             background-color: #0d1117;
             display: block;
+            max-width: 100%;
+            height: auto;
         }
         .ui-panel {
             margin-top: 15px;
@@ -37,6 +40,7 @@
             align-items: center;
             flex-wrap: wrap;
             width: 960px;
+            max-width: 95vw;
             box-sizing: border-box;
         }
         .saves-manager {
@@ -46,6 +50,7 @@
             padding: 12px;
             border-radius: 6px;
             width: 960px;
+            max-width: 95vw;
             box-sizing: border-box;
         }
         .saves-list {
@@ -79,6 +84,7 @@
             text-align: center;
             line-height: 1.6;
             max-width: 800px;
+            padding: 0 15px;
         }
         #ioData { flex-grow: 1; min-width: 150px; font-size: 12px; }
         #profileNameInput { width: 160px; }
@@ -108,7 +114,7 @@
 </div>
 
 <div class="saves-manager">
-    <div style="display: flex; gap: 10px; align-items: center;">
+    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
         <strong style="font-size: 14px; color: #0099ff;">Browser Level Inventory:</strong>
         <input type="text" id="profileNameInput" placeholder="Name your level...">
         <button id="btnSaveProfile">💾 Save Current Layout</button>
@@ -119,8 +125,8 @@
 
 <div class="instructions">
     <strong>Controls Map:</strong><br>
-    <strong>Play Mode:</strong> SPACEBAR, UP ARROW, or Click to Jump. Tap action keys inside Yellow Orbs to launch midair. 'R' to reload.<br>
-    <strong>Editor Mode:</strong> Left Click = Draw, Right Click = Erase. Use Left/Right Arrows to scroll map. <br>
+    <strong>Play Mode:</strong> SPACEBAR, UP ARROW, or Tap/Click screen to Jump. Tap action keys inside Yellow Orbs to launch midair. 'R' to reload.<br>
+    <strong>Editor Mode:</strong> Left Click/Tap = Draw, Right Click = Erase. Use Left/Right Arrows to scroll map. <br>
     <span style="color: #00ff66;"><strong>New Pan View:</strong> Hold down <strong>SPACEBAR + Drag Mouse</strong> across canvas to rapidly slide camera view left/right.</span><br>
     <strong>Object Toggles:</strong> Press <strong>'E'</strong> on keyboard to rotate the active object brush cleanly by 90° increments before drawing.
 </div>
@@ -181,7 +187,7 @@ let isErasing = false;
 let isDraggingCamera = false;
 let lastMouseX = 0;
 
-// Default backup level code string [cite: 1]
+// Default backup level code string
 const fallbackString = "0:17:1:0,1:17:1:0,2:17:1:0,3:17:1:0,4:17:1:0,5:17:1:0,6:17:1:0,7:17:1:0,8:17:1:0,9:17:1:0,10:17:1:0,11:17:1:0,12:17:1:0,13:13:1:0,13:15:1:0,13:16:1:0,13:17:1:0,14:17:1:0,15:17:1:0,16:17:1:0,17:17:1:0,18:17:1:0,19:17:1:0,20:16:2:0,20:17:1:0,21:16:2:0,21:17:1:0,22:16:2:0,22:17:1:0,23:17:1:0,24:17:1:0,25:17:1:0,26:16:2:0,26:17:1:0,27:16:2:0,27:17:1:0,28:17:1:0,29:17:1:0,30:17:1:0,31:16:3:0,31:17:1:0,32:16:3:0,32:17:1:0,33:16:3:0,33:17:1:0,34:16:3:0,34:17:1:0,35:16:1:0,35:17:1:0,36:16:1:0,36:17:1:0,37:16:1:0,37:17:1:0,38:17:1:0,23:13:4:0,27:13:4:0,38:13:4:0,45:13:4:0";
 
 // ==========================================
@@ -665,7 +671,7 @@ function handlePointerDown(e) {
         const tx = Math.floor(mx / TILE_SIZE);
         const ty = Math.floor(my / TILE_SIZE);
 
-        if (e.button === 0) { 
+        if (e.button === 0 || e.pointerType === 'touch') { 
             isPlacing = true;
             if (tx >= 0 && tx < levelWidthTiles && ty >= 0 && ty < levelHeightTiles) {
                 grid[tx][ty] = { type: currentTileType, rotation: currentEditorRotation };
@@ -714,6 +720,33 @@ function handlePointerUp(e) {
     isPlacing = false;
     isErasing = false;
 }
+
+// Add Mobile Direct Touch Listeners to handle mobile browser zoom delays
+canvas.addEventListener('touchstart', (e) => {
+    if (mode === 'play') e.preventDefault(); // Stop mobile multi-tap zooming
+    const touch = e.touches[0];
+    const dummyEvent = {
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        button: 0,
+        pointerType: 'touch'
+    };
+    handlePointerDown(dummyEvent);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+    if (mode === 'play') e.preventDefault();
+    const touch = e.touches[0];
+    const dummyEvent = {
+        clientX: touch.clientX,
+        clientY: touch.clientY
+    };
+    handlePointerMove(dummyEvent);
+}, { passive: false });
+
+canvas.addEventListener('touchend', (e) => {
+    handlePointerUp(e);
+});
 
 canvas.addEventListener('mousedown', handlePointerDown);
 canvas.addEventListener('mousemove', handlePointerMove);
