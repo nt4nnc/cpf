@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>cpf+</title>
     <style>
         body {
@@ -22,13 +22,10 @@
             position: relative;
             box-shadow: 0 0 25px rgba(0,0,0,0.9);
             border: 2px solid #333;
-            max-width: 100%;
         }
         canvas {
             background-color: #0d1117;
             display: block;
-            max-width: 100%;
-            height: auto;
         }
         .ui-panel {
             margin-top: 15px;
@@ -40,7 +37,6 @@
             align-items: center;
             flex-wrap: wrap;
             width: 960px;
-            max-width: 95vw;
             box-sizing: border-box;
         }
         .saves-manager {
@@ -50,7 +46,6 @@
             padding: 12px;
             border-radius: 6px;
             width: 960px;
-            max-width: 95vw;
             box-sizing: border-box;
         }
         .saves-list {
@@ -84,7 +79,6 @@
             text-align: center;
             line-height: 1.6;
             max-width: 800px;
-            padding: 0 15px;
         }
         #ioData { flex-grow: 1; min-width: 150px; font-size: 12px; }
         #profileNameInput { width: 160px; }
@@ -114,19 +108,19 @@
 </div>
 
 <div class="saves-manager">
-    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+    <div style="display: flex; gap: 10px; align-items: center;">
         <strong style="font-size: 14px; color: #0099ff;">Browser Level Inventory:</strong>
         <input type="text" id="profileNameInput" placeholder="Name your level...">
         <button id="btnSaveProfile">💾 Save Current Layout</button>
     </div>
     <div class="saves-list" id="localSavesContainer">
-        </div>
+    </div>
 </div>
 
 <div class="instructions">
     <strong>Controls Map:</strong><br>
-    <strong>Play Mode:</strong> SPACEBAR, UP ARROW, or Tap/Click screen to Jump. Tap action keys inside Yellow Orbs to launch midair. 'R' to reload.<br>
-    <strong>Editor Mode:</strong> Left Click/Tap = Draw, Right Click = Erase. Use Left/Right Arrows to scroll map. <br>
+    <strong>Play Mode:</strong> SPACEBAR, UP ARROW, or Click to Jump. Tap action keys inside Yellow Orbs to launch midair. 'R' to reload.<br>
+    <strong>Editor Mode:</strong> Left Click = Draw, Right Click = Erase. Use Left/Right Arrows to scroll map. <br>
     <span style="color: #00ff66;"><strong>New Pan View:</strong> Hold down <strong>SPACEBAR + Drag Mouse</strong> across canvas to rapidly slide camera view left/right.</span><br>
     <strong>Object Toggles:</strong> Press <strong>'E'</strong> on keyboard to rotate the active object brush cleanly by 90° increments before drawing.
 </div>
@@ -138,21 +132,21 @@ const ctx = canvas.getContext('2d');
 // ==========================================
 // --- FIXED PHYSICS PRESETS ---
 // ==========================================
-const TILE_SIZE = 30; 
-const FORWARD_SPEED = 6.0 / 2.3; 
-const VIEW_OFFSET_X = 180; 
+const TILE_SIZE = 30;
+const FORWARD_SPEED = 6.0 / 2.3;
+const VIEW_OFFSET_X = 180;
 
-const JUMP_SPEED = 0.06; 
-const JUMP_RADIUS = TILE_SIZE * 2.1; 
+const JUMP_SPEED = 0.06;
+const JUMP_RADIUS = TILE_SIZE * 2.1;
 
-const HITBOX_BUFFER = 4; 
+const HITBOX_BUFFER = 4;
 
 // ==========================================
 // --- SYSTEM STATE VARIABLES ---
 // ==========================================
-let mode = 'play'; 
+let mode = 'play';
 let levelWidthTiles = 300;
-let levelHeightTiles = Math.floor(canvas.height / TILE_SIZE); 
+let levelHeightTiles = Math.floor(canvas.height / TILE_SIZE);
 
 let grid = Array(levelWidthTiles).fill(null).map(() => 
     Array(levelHeightTiles).fill(null).map(() => ({ type: 0, rotation: 0 }))
@@ -160,14 +154,14 @@ let grid = Array(levelWidthTiles).fill(null).map(() =>
 
 let cameraX = 0;
 let currentTileType = 1;
-let currentEditorRotation = 0; 
-let activeProfileKey = "Default Level"; // Tracker for active selected map profile slot
+let currentEditorRotation = 0;
+let activeProfileKey = "Default Level";
 
 let player = {
     x: 100,
     y: 300,
-    w: 30, 
-    h: 30, 
+    w: 30,
+    h: 30,
     vx: FORWARD_SPEED,
     vy: 0,
     isJumping: false,
@@ -183,11 +177,10 @@ let keys = {};
 let isPlacing = false;
 let isErasing = false;
 
-// Camera drag interaction states
+let isKilling = false; 
 let isDraggingCamera = false;
 let lastMouseX = 0;
 
-// Default backup level code string
 const fallbackString = "0:17:1:0,1:17:1:0,2:17:1:0,3:17:1:0,4:17:1:0,5:17:1:0,6:17:1:0,7:17:1:0,8:17:1:0,9:17:1:0,10:17:1:0,11:17:1:0,12:17:1:0,13:13:1:0,13:15:1:0,13:16:1:0,13:17:1:0,14:17:1:0,15:17:1:0,16:17:1:0,17:17:1:0,18:17:1:0,19:17:1:0,20:16:2:0,20:17:1:0,21:16:2:0,21:17:1:0,22:16:2:0,22:17:1:0,23:17:1:0,24:17:1:0,25:17:1:0,26:16:2:0,26:17:1:0,27:16:2:0,27:17:1:0,28:17:1:0,29:17:1:0,30:17:1:0,31:16:3:0,31:17:1:0,32:16:3:0,32:17:1:0,33:16:3:0,33:17:1:0,34:16:3:0,34:17:1:0,35:16:1:0,35:17:1:0,36:16:1:0,36:17:1:0,37:16:1:0,37:17:1:0,38:17:1:0,23:13:4:0,27:13:4:0,38:13:4:0,45:13:4:0";
 
 // ==========================================
@@ -226,7 +219,6 @@ function parseLevelStringToGrid(levelString) {
 
 function saveActiveLayoutSlot() {
     localStorage.setItem(`gd_profile_${activeProfileKey}`, getSerializedLevelString());
-    // Store profile key in master roster list index if missing
     let listing = getProfileRoster();
     if (!listing.includes(activeProfileKey)) {
         listing.push(activeProfileKey);
@@ -240,9 +232,9 @@ function getProfileRoster() {
     return data ? JSON.parse(data) : ["Default Level"];
 }
 
+// Injects base floor tiles on boot if no save exists
 function initEngineLoad() {
     let roster = getProfileRoster();
-    // If local system index is blank, set defaults up
     if (!localStorage.getItem(`gd_profile_Default Level`)) {
         localStorage.setItem(`gd_profile_Default Level`, fallbackString);
     }
@@ -273,7 +265,6 @@ function renderProfileDashboard() {
         if (profileName === activeProfileKey) btn.classList.add('selected');
 
         btn.addEventListener('click', () => {
-            // Commit active map modifications before switching profiles
             localStorage.setItem(`gd_profile_${activeProfileKey}`, getSerializedLevelString());
             activeProfileKey = profileName;
             parseLevelStringToGrid(localStorage.getItem(`gd_profile_${profileName}`));
@@ -283,7 +274,6 @@ function renderProfileDashboard() {
 
         wrapper.appendChild(btn);
 
-        // Render profile removal controls if it isn't the primary fallback track
         if (profileName !== "Default Level") {
             const delBtn = document.createElement('button');
             delBtn.className = "delete-btn";
@@ -306,15 +296,24 @@ function renderProfileDashboard() {
     });
 }
 
-// Profile Save Input Listener Link
 document.getElementById('btnSaveProfile').addEventListener('click', () => {
     const nameInput = document.getElementById('profileNameInput');
-    let title = nameInput.value.trim().replace(/[:|,]/g, ""); // Filter illegal syntax split tokens
-    if (!title) return alert("Please specify a profile layout label name first.");
+    let title = nameInput.value.trim().replace(/[:|,]/g, "");
+    if (!title) return alert("Please specify a profile layout name label name first.");
     activeProfileKey = title;
     saveActiveLayoutSlot();
     nameInput.value = '';
 });
+
+function triggerDeath() {
+    if (isKilling) return;
+    isKilling = true;
+    player.alive = false;
+    
+    setTimeout(() => {
+        resetPlayer();
+    }, 500);
+}
 
 function resetPlayer() {
     player.x = 100;
@@ -327,6 +326,7 @@ function resetPlayer() {
     player.alive = true;
     player.hasActivatedOrb = false;
     cameraX = 0;
+    isKilling = false; 
 }
 
 function getPlayerHitbox() {
@@ -336,6 +336,17 @@ function getPlayerHitbox() {
         w: player.w - (HITBOX_BUFFER * 2),
         h: player.h - (HITBOX_BUFFER * 2)
     };
+}
+
+// Helper to look up tiles, seamlessly forcing the infinite bottom row to be solid blocks
+function getTileAt(x, y) {
+    if (y === levelHeightTiles - 1) {
+        return { type: 1, rotation: 0 }; // Forces a permanent solid floor block at the layout floor coordinate line
+    }
+    if (x >= 0 && x < levelWidthTiles && y >= 0 && y < levelHeightTiles) {
+        return grid[x][y];
+    }
+    return { type: 0, rotation: 0 };
 }
 
 // ==========================================
@@ -369,23 +380,21 @@ function updatePhysics() {
     let hitbox = getPlayerHitbox();
     let pCells = getOccupiedCells(player); 
 
-    // Floor / Ledge Solid Collisions
+    // Handle Ground / Landing Collisions
     for (let cell of pCells) {
-        if (cell.x >= 0 && cell.x < levelWidthTiles && cell.y >= 0 && cell.y < levelHeightTiles) {
-            let tile = grid[cell.x][cell.y];
-            if (tile.type === 1 || tile.type === 3) { 
-                let tileTop = cell.y * TILE_SIZE;
-                let tileLeft = cell.x * TILE_SIZE;
-                let tileRight = tileLeft + TILE_SIZE;
+        let tile = getTileAt(cell.x, cell.y);
+        if (tile.type === 1 || tile.type === 3) { 
+            let tileTop = cell.y * TILE_SIZE;
+            let tileLeft = cell.x * TILE_SIZE;
+            let tileRight = tileLeft + TILE_SIZE;
 
-                if (hitbox.x + hitbox.w > tileLeft && hitbox.x < tileRight) {
-                    if (player.y + player.h >= tileTop && previousY + player.h <= tileTop + 8) {
-                        player.y = tileTop - player.h;
-                        player.isGrounded = true;
-                        if (player.isJumping) {
-                            player.isJumping = false;
-                            player.vy = 0;
-                        }
+            if (hitbox.x + hitbox.w > tileLeft && hitbox.x < tileRight) {
+                if (player.y + player.h >= tileTop && previousY + player.h <= tileTop + 8) {
+                    player.y = tileTop - player.h;
+                    player.isGrounded = true;
+                    if (player.isJumping) {
+                        player.isJumping = false;
+                        player.vy = 0;
                     }
                 }
             }
@@ -394,86 +403,79 @@ function updatePhysics() {
 
     hitbox = getPlayerHitbox();
 
-    // Wall Frontal Crash Management
+    // Handle Head-on Wall Collisions
     for (let cell of pCells) {
-        if (cell.x >= 0 && cell.x < levelWidthTiles && cell.y >= 0 && cell.y < levelHeightTiles) {
-            let tile = grid[cell.x][cell.y];
-            if (tile.type === 1 || tile.type === 3) {
-                let tileLeft = cell.x * TILE_SIZE;
-                let tileRight = tileLeft + TILE_SIZE;
-                let tileTop = cell.y * TILE_SIZE;
-                let tileBottom = tileTop + (tile.type === 3 ? TILE_SIZE/2 : TILE_SIZE);
+        let tile = getTileAt(cell.x, cell.y);
+        if (tile.type === 1 || tile.type === 3) {
+            let tileLeft = cell.x * TILE_SIZE;
+            let tileRight = tileLeft + TILE_SIZE;
+            let tileTop = cell.y * TILE_SIZE;
+            let tileBottom = tileTop + (tile.type === 3 ? TILE_SIZE/2 : TILE_SIZE);
 
-                if (hitbox.x + hitbox.w > tileLeft && hitbox.x < tileRight) {
-                    if (hitbox.y + hitbox.h > tileTop + 2 && hitbox.y < tileBottom - 2) {
-                        if (!player.isGrounded || (player.y + player.h > tileTop + HITBOX_BUFFER)) {
-                            player.alive = false; 
-                        }
+            if (hitbox.x + hitbox.w > tileLeft && hitbox.x < tileRight) {
+                if (hitbox.y + hitbox.h > tileTop + 2 && hitbox.y < tileBottom - 2) {
+                    if (!player.isGrounded || (player.y + player.h > tileTop + HITBOX_BUFFER)) {
+                        triggerDeath(); 
                     }
                 }
             }
         }
     }
 
-    // Rotated Spike Vector Collision Hitboxes
+    // Handle Spike Hazards
     for (let cell of pCells) {
-        if (cell.x >= 0 && cell.x < levelWidthTiles && cell.y >= 0 && cell.y < levelHeightTiles) {
-            let tile = grid[cell.x][cell.y];
-            if (tile.type === 2) { 
-                let sLeft = cell.x * TILE_SIZE + 5;
-                let sRight = (cell.x + 1) * TILE_SIZE - 5;
-                let sTop = cell.y * TILE_SIZE + 5;
-                let sBottom = (cell.y + 1) * TILE_SIZE;
+        let tile = getTileAt(cell.x, cell.y);
+        if (tile.type === 2) { 
+            let sLeft = cell.x * TILE_SIZE + 5;
+            let sRight = (cell.x + 1) * TILE_SIZE - 5;
+            let sTop = cell.y * TILE_SIZE + 5;
+            let sBottom = (cell.y + 1) * TILE_SIZE;
 
-                if (tile.rotation === 0) sTop = cell.y * TILE_SIZE + 10;
-                if (tile.rotation === 2) sBottom = cell.y * TILE_SIZE + 20;
+            if (tile.rotation === 0) sTop = cell.y * TILE_SIZE + 10;
+            if (tile.rotation === 2) sBottom = cell.y * TILE_SIZE + 20;
 
-                if (hitbox.x + hitbox.w > sLeft && hitbox.x < sRight && hitbox.y + hitbox.h > sTop && hitbox.y < sBottom) {
-                    player.alive = false;
-                }
+            if (hitbox.x + hitbox.w > sLeft && hitbox.x < sRight && hitbox.y + hitbox.h > sTop && hitbox.y < sBottom) {
+                triggerDeath();
             }
         }
     }
 
-    // Airborne Interactive Orb Triggers
+    // Handle Interactive Orbs
     let touchingOrbThisFrame = false;
     for (let cell of pCells) {
-        if (cell.x >= 0 && cell.x < levelWidthTiles && cell.y >= 0 && cell.y < levelHeightTiles) {
-            let tile = grid[cell.x][cell.y];
-            if (tile.type === 4) {
-                let orbCenterX = cell.x * TILE_SIZE + TILE_SIZE / 2;
-                let orbCenterY = cell.y * TILE_SIZE + TILE_SIZE / 2;
-                let pCenterX = player.x + player.w / 2;
-                let pCenterY = player.y + player.h / 2;
+        let tile = getTileAt(cell.x, cell.y);
+        if (tile.type === 4) {
+            let orbCenterX = cell.x * TILE_SIZE + TILE_SIZE / 2;
+            let orbCenterY = cell.y * TILE_SIZE + TILE_SIZE / 2;
+            let pCenterX = player.x + player.w / 2;
+            let pCenterY = player.y + player.h / 2;
 
-                let distance = Math.sqrt((pCenterX - orbCenterX)**2 + (pCenterY - orbCenterY)**2);
-                if (distance < 36) {
-                    touchingOrbThisFrame = true;
-                    if ((keys[' '] || keys['ArrowUp'] || keys['clickJump']) && !player.hasActivatedOrb) {
-                        player.isJumping = true;
-                        player.jumpAngle = 0; 
-                        player.jumpGroundY = player.y; 
-                        player.hasActivatedOrb = true;
-                    }
+            let distance = Math.sqrt((pCenterX - orbCenterX)**2 + (pCenterY - orbCenterY)**2);
+            if (distance < 36) {
+                touchingOrbThisFrame = true;
+                if ((keys[' '] || keys['ArrowUp'] || keys['clickJump']) && !player.hasActivatedOrb) {
+                    player.isJumping = true;
+                    player.jumpAngle = 0; 
+                    player.jumpGroundY = player.y; 
+                    player.hasActivatedOrb = true;
                 }
             }
         }
     }
     if (!touchingOrbThisFrame) player.hasActivatedOrb = false;
 
-    // Boundary Fall Toggles
     if (!player.isJumping && !player.isGrounded) {
         let floorCells = getOccupiedCells({x: player.x, y: player.y + 1, w: player.w, h: player.h});
         let foundFloor = false;
         for(let c of floorCells) {
-            if(grid[c.x] && (grid[c.x][c.y].type === 1 || grid[c.x][c.y].type === 3)) {
+            let tile = getTileAt(c.x, c.y);
+            if(tile.type === 1 || tile.type === 3) {
                 foundFloor = true;
             }
         }
         if(foundFloor) player.isGrounded = true;
     }
 
-    // Dynamic Visual Rotation Locks
     if (player.isGrounded) {
         let targetRot = Math.round(player.rotation / (Math.PI / 2)) * (Math.PI / 2);
         player.rotation += (targetRot - player.rotation) * 0.3;
@@ -528,9 +530,8 @@ function draw() {
     let tileEndCol = tileStartCol + Math.ceil(canvas.width / TILE_SIZE) + 1;
 
     for (let x = tileStartCol; x < tileEndCol; x++) {
-        if (x < 0 || x >= levelWidthTiles) continue;
         for (let y = 0; y < levelHeightTiles; y++) {
-            let tile = grid[x][y];
+            let tile = getTileAt(x, y);
             if (tile.type === 0) continue;
 
             let rx = x * TILE_SIZE - cameraX;
@@ -540,13 +541,13 @@ function draw() {
             ctx.translate(rx + TILE_SIZE / 2, ry + TILE_SIZE / 2);
             ctx.rotate(tile.rotation * (Math.PI / 2));
 
-            if (tile.type === 1) { 
+            if (tile.type === 1) {
                 ctx.fillStyle = '#00bcff';
                 ctx.fillRect(-TILE_SIZE / 2, -TILE_SIZE / 2, TILE_SIZE, TILE_SIZE);
                 ctx.strokeStyle = '#ffffff';
                 ctx.lineWidth = 2;
                 ctx.strokeRect(-TILE_SIZE / 2, -TILE_SIZE / 2, TILE_SIZE, TILE_SIZE);
-            } else if (tile.type === 2) { 
+            } else if (tile.type === 2) {
                 ctx.fillStyle = '#ff3333';
                 ctx.beginPath();
                 ctx.moveTo(0, -TILE_SIZE / 2);
@@ -557,7 +558,7 @@ function draw() {
                 ctx.strokeStyle = '#ffffff';
                 ctx.lineWidth = 1.5;
                 ctx.stroke();
-            } else if (tile.type === 3) { 
+            } else if (tile.type === 3) {
                 ctx.fillStyle = '#00bcff';
                 ctx.fillRect(-TILE_SIZE / 2, -TILE_SIZE / 2, TILE_SIZE, TILE_SIZE / 2);
                 ctx.strokeStyle = '#ffffff';
@@ -619,12 +620,11 @@ function loop() {
             player.jumpAngle = 0; 
             player.jumpGroundY = player.y;
         }
-        updatePhysics();
-        if (!player.alive) {
-            setTimeout(() => { resetPlayer(); }, 500);
+        
+        if (player.alive) {
+            updatePhysics();
         }
     } else {
-        // Fallback Arrow Key Scroll Velocities
         if (!isDraggingCamera) {
             if (keys['ArrowRight']) cameraX += 10;
             if (keys['ArrowLeft']) cameraX -= 10;
@@ -660,7 +660,6 @@ function handlePointerDown(e) {
     if (mode === 'play') {
         keys['clickJump'] = true;
     } else {
-        // Spacebar camera drag initialization switch
         if (keys[' ']) {
             isDraggingCamera = true;
             return;
@@ -671,7 +670,7 @@ function handlePointerDown(e) {
         const tx = Math.floor(mx / TILE_SIZE);
         const ty = Math.floor(my / TILE_SIZE);
 
-        if (e.button === 0 || e.pointerType === 'touch') { 
+        if (e.button === 0) { 
             isPlacing = true;
             if (tx >= 0 && tx < levelWidthTiles && ty >= 0 && ty < levelHeightTiles) {
                 grid[tx][ty] = { type: currentTileType, rotation: currentEditorRotation };
@@ -690,7 +689,6 @@ function handlePointerMove(e) {
     const currentMX = e.clientX - rect.left;
 
     if (mode === 'edit') {
-        // Drag scrolling logic execution block
         if (isDraggingCamera && keys[' ']) {
             let deltaX = currentMX - lastMouseX;
             cameraX -= deltaX; 
@@ -720,33 +718,6 @@ function handlePointerUp(e) {
     isPlacing = false;
     isErasing = false;
 }
-
-// Add Mobile Direct Touch Listeners to handle mobile browser zoom delays
-canvas.addEventListener('touchstart', (e) => {
-    if (mode === 'play') e.preventDefault(); // Stop mobile multi-tap zooming
-    const touch = e.touches[0];
-    const dummyEvent = {
-        clientX: touch.clientX,
-        clientY: touch.clientY,
-        button: 0,
-        pointerType: 'touch'
-    };
-    handlePointerDown(dummyEvent);
-}, { passive: false });
-
-canvas.addEventListener('touchmove', (e) => {
-    if (mode === 'play') e.preventDefault();
-    const touch = e.touches[0];
-    const dummyEvent = {
-        clientX: touch.clientX,
-        clientY: touch.clientY
-    };
-    handlePointerMove(dummyEvent);
-}, { passive: false });
-
-canvas.addEventListener('touchend', (e) => {
-    handlePointerUp(e);
-});
 
 canvas.addEventListener('mousedown', handlePointerDown);
 canvas.addEventListener('mousemove', handlePointerMove);
@@ -809,7 +780,6 @@ btnImport.addEventListener('click', () => {
     }
 });
 
-// Run Primary Assembly Loops
 initEngineLoad();
 resetPlayer();
 loop();
